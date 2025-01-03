@@ -2,12 +2,13 @@ import { Color } from "three"
 
 export interface GlobeMarker {
   id: string
-  city: string
+  place: string
   country: string
   coordinates: [number, number]
   value: number
   color?: string
   description?: string
+  date: string
 }
 
 export interface GlobeConfig {

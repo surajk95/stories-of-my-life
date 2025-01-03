@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import * as THREE from "three"
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js"
 import * as TWEEN from "@tweenjs/tween.js"
@@ -9,9 +9,9 @@ import { GlobeConfig, GlobeMarker } from "../types/globe"
 
 const defaultConfig: GlobeConfig = {
   autoRotate: true,
-  autoRotateSpeed: 0.5,
+  autoRotateSpeed: 0.10,
   enableZoom: true,
-  maxDistance: 400,
+  maxDistance: 200,
   minDistance: 100,
   rotateSpeed: 1,
   markerSize: 1,
@@ -21,9 +21,42 @@ const defaultConfig: GlobeConfig = {
   atmosphereColor: "#1a237e"
 }
 
-function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
+interface GlobeProps {
+  selectedMarker: GlobeMarker | null
+  onMarkerSelect: (marker: GlobeMarker | null) => void
+  config?: Partial<GlobeConfig>
+}
+
+function createGlowMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 }
+    },
+    vertexShader: `
+      varying vec3 vNormal;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float time;
+      varying vec3 vNormal;
+      void main() {
+        float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+        float glow = (sin(time * 2.0) * 0.5 + 0.5) * 0.8 + 0.2;
+        gl_FragColor = vec4(1.0, 1.0, 0.8, intensity * glow);
+      }
+    `,
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    side: THREE.FrontSide
+  })
+}
+
+function Globe({ selectedMarker, onMarkerSelect, config = defaultConfig }: GlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [selectedMarker, setSelectedMarker] = useState<GlobeMarker | null>(null)
+  const cameraRef = useRef<THREE.PerspectiveCamera>(null)
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -42,6 +75,7 @@ function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
       0.1,
       1000
     )
+    cameraRef.current = camera
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
     
     renderer.setSize(window.innerWidth, window.innerHeight)
@@ -51,9 +85,9 @@ function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
     const globeGeometry = new THREE.SphereGeometry(50, 64, 64)
     const globeMaterial = new THREE.MeshPhongMaterial({
       map: new THREE.TextureLoader().load("https://raw.githubusercontent.com/chrisrzhou/react-globe/main/textures/globe_dark.jpg"),
-      bumpMap: new THREE.TextureLoader().load("/earth-topology.jpg"),
+      // bumpMap: new THREE.TextureLoader().load("/earth-topology.jpg"),
       bumpScale: 0.5,
-      specularMap: new THREE.TextureLoader().load("/earth-specular.jpg"),
+      // specularMap: new THREE.TextureLoader().load("/earth-specular.jpg"),
       specular: new THREE.Color("#909090"),
       shininess: 5,
     })
@@ -93,10 +127,10 @@ function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
         16
       )
 
-      // Generate random vibrant color
+      // Generate random vibrant color for the marker
       const hue = Math.random()
-      const saturation = 0.7 + Math.random() * 0.3 // 0.7-1.0 for vibrant colors
-      const lightness = 0.5 + Math.random() * 0.2   // 0.5-0.7 for medium-bright colors
+      const saturation = 0.7 + Math.random() * 0.3
+      const lightness = 0.5 + Math.random() * 0.2
       const color = new THREE.Color().setHSL(hue, saturation, lightness)
 
       const markerMaterial = new THREE.MeshBasicMaterial({
@@ -105,23 +139,37 @@ function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
       
       const markerMesh = new THREE.Mesh(markerGeometry, markerMaterial)
       
+      // Add glow effect
+      const glowGeometry = new THREE.SphereGeometry(
+        (config.markerSize || defaultConfig.markerSize!) * 2,
+        16,
+        16
+      )
+      const glowMaterial = createGlowMaterial()
+      const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial)
+      
+      // Group marker and its glow
+      const markerGroup = new THREE.Group()
+      markerGroup.add(markerMesh)
+      markerGroup.add(glowMesh)
+      
       // Convert lat/long to 3D position
       const latitude = marker.coordinates[0]
       const longitude = marker.coordinates[1]
       const radius = 51
 
-      // Convert to radians
       const latRad = latitude * (Math.PI / 180)
       const lonRad = -longitude * (Math.PI / 180)
       
-      markerMesh.position.set(
+      markerGroup.position.set(
         radius * Math.cos(latRad) * Math.cos(lonRad),
         radius * Math.sin(latRad),
         radius * Math.cos(latRad) * Math.sin(lonRad)
       )
       
-      markerMesh.userData = marker
-      scene.add(markerMesh)
+      markerGroup.userData = marker
+      markerMesh.userData = marker // Keep this for raycasting
+      scene.add(markerGroup)
     })
 
     // Lighting
@@ -152,15 +200,21 @@ function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
 
       raycaster.setFromCamera(mouse, camera)
-      const intersects = raycaster.intersectObjects(scene.children)
+      const intersects = raycaster.intersectObjects(scene.children, true)
 
+      let foundMarker = false
       for (const intersect of intersects) {
-        if (intersect.object.userData?.id) {
-          const marker = intersect.object.userData as GlobeMarker
-          setSelectedMarker(marker)
+        const markerData = intersect.object.userData?.id ? 
+          intersect.object.userData : 
+          intersect.object.parent?.userData;
+
+        if (markerData?.id) {
+          foundMarker = true
+          const marker = markerData as GlobeMarker
+          console.log('zzz Found marker:', marker)
+          onMarkerSelect(marker)
           
-          // Zoom to marker
-          const position = intersect.object.position.clone()
+          const position = intersect.object.parent?.position.clone() || intersect.object.position.clone()
           const distance = 100
           const targetPosition = position.normalize().multiplyScalar(distance)
           
@@ -172,9 +226,13 @@ function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
             }, 1000)
             .easing(TWEEN.Easing.Cubic.Out)
             .start()
-            
+          
           break
         }
+      }
+
+      if (!foundMarker) {
+        onMarkerSelect(null)
       }
     }
 
@@ -183,6 +241,23 @@ function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
     // Animation loop
     function animate() {
       requestAnimationFrame(animate)
+      
+      // Update glow shader time uniform and marker scales
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.material instanceof THREE.ShaderMaterial) {
+          if (object.material.uniforms?.time) {
+            object.material.uniforms.time.value = performance.now() / 1000
+          }
+        }
+        
+        // Scale markers based on camera distance
+        if (object instanceof THREE.Group && object.userData?.id) {
+          const distance = camera.position.distanceTo(object.position)
+          const scale = distance / 200 // Adjust 200 to change the base scale
+          object.scale.setScalar(scale)
+        }
+      })
+      
       controls.update()
       TWEEN.update()
       renderer.render(scene, camera)
@@ -215,18 +290,7 @@ function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
   }, [config])
 
   return (
-    <div className="relative w-full h-screen">
-      <div ref={containerRef} className="w-full h-full" />
-      {selectedMarker && (
-        <div className="absolute top-4 left-4 bg-black/80 text-white p-4 rounded-lg">
-          <h3 className="text-xl font-bold">{selectedMarker.city}</h3>
-          <p className="text-sm text-gray-300">{selectedMarker.country}</p>
-          {selectedMarker.description && (
-            <p className="mt-2 text-sm">{selectedMarker.description}</p>
-          )}
-        </div>
-      )}
-    </div>
+    <div ref={containerRef} className="w-full h-full" />
   )
 }
 
