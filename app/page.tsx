@@ -1,4 +1,4 @@
-import Globe from "./globe/index"
+import { GlobeWrapper } from "./components/globe-wrapper"
 
 export default function Home() {
   return (
@@ -8,9 +8,7 @@ export default function Home() {
         pointer-events-none">
         Stories of my life
       </h1>
-      <div className="relative z-10">
-        <Globe />
-      </div>
+      <GlobeWrapper />
     </div>
   )
 }

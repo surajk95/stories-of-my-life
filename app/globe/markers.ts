@@ -7,7 +7,6 @@ const markers: GlobeMarker[] = [
     country: "Singapore",
     coordinates: [1.3521, 103.8198],
     value: 50,
-    color: "#ff4444",
     description: "The Lion City"
   },
   {
@@ -16,7 +15,6 @@ const markers: GlobeMarker[] = [
     country: "United States",
     coordinates: [40.73061, -73.935242],
     value: 45,
-    color: "#4444ff",
     description: "The Big Apple"
   },
   // Add more markers as needed...

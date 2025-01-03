@@ -21,12 +21,18 @@ const defaultConfig: GlobeConfig = {
   atmosphereColor: "#1a237e"
 }
 
-export function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
+function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig> }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [selectedMarker, setSelectedMarker] = useState<GlobeMarker | null>(null)
 
   useEffect(() => {
     if (!containerRef.current) return
+
+    // Remove any existing canvas elements first
+    const existingCanvas = containerRef.current.querySelector('canvas')
+    if (existingCanvas) {
+      existingCanvas.remove()
+    }
 
     // Scene setup
     const scene = new THREE.Scene()
@@ -86,20 +92,32 @@ export function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig
         16,
         16
       )
+
+      // Generate random vibrant color
+      const hue = Math.random()
+      const saturation = 0.7 + Math.random() * 0.3 // 0.7-1.0 for vibrant colors
+      const lightness = 0.5 + Math.random() * 0.2   // 0.5-0.7 for medium-bright colors
+      const color = new THREE.Color().setHSL(hue, saturation, lightness)
+
       const markerMaterial = new THREE.MeshBasicMaterial({
-        color: marker.color || config.markerColor || defaultConfig.markerColor!,
+        color: color
       })
+      
       const markerMesh = new THREE.Mesh(markerGeometry, markerMaterial)
       
       // Convert lat/long to 3D position
-      const lat = marker.coordinates[0] * (Math.PI / 180)
-      const lon = marker.coordinates[1] * (Math.PI / 180)
+      const latitude = marker.coordinates[0]
+      const longitude = marker.coordinates[1]
       const radius = 51
+
+      // Convert to radians
+      const latRad = latitude * (Math.PI / 180)
+      const lonRad = -longitude * (Math.PI / 180)
       
       markerMesh.position.set(
-        radius * Math.cos(lat) * Math.cos(lon),
-        radius * Math.sin(lat),
-        radius * Math.cos(lat) * Math.sin(lon)
+        radius * Math.cos(latRad) * Math.cos(lonRad),
+        radius * Math.sin(latRad),
+        radius * Math.cos(latRad) * Math.sin(lonRad)
       )
       
       markerMesh.userData = marker
@@ -174,8 +192,25 @@ export function Globe({ config = defaultConfig }: { config?: Partial<GlobeConfig
     // Cleanup
     return () => {
       window.removeEventListener("click", onClick)
-      containerRef.current?.removeChild(renderer.domElement)
+      
+      // Dispose of all THREE.js resources
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose()
+          if (object.material instanceof THREE.Material) {
+            object.material.dispose()
+          } else if (Array.isArray(object.material)) {
+            object.material.forEach(material => material.dispose())
+          }
+        }
+      })
+      
       renderer.dispose()
+      
+      // Remove the canvas
+      if (containerRef.current?.contains(renderer.domElement)) {
+        containerRef.current.removeChild(renderer.domElement)
+      }
     }
   }, [config])
 
