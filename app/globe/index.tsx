@@ -84,40 +84,16 @@ function Globe({ selectedMarker, onMarkerSelect, config = defaultConfig }: Globe
     // Globe creation
     const globeGeometry = new THREE.SphereGeometry(50, 64, 64)
     const globeMaterial = new THREE.MeshPhongMaterial({
-      map: new THREE.TextureLoader().load("https://raw.githubusercontent.com/chrisrzhou/react-globe/main/textures/globe_dark.jpg"),
+      map: new THREE.TextureLoader().load("/8081_earthlights10k.jpg"),
       // bumpMap: new THREE.TextureLoader().load("/earth-topology.jpg"),
-      bumpScale: 0.5,
+      // bumpScale: 0.5,
       // specularMap: new THREE.TextureLoader().load("/earth-specular.jpg"),
-      specular: new THREE.Color("#909090"),
-      shininess: 5,
+      // specular: new THREE.Color("#909090"),
+      // shininess: 5,
     })
     
     const globe = new THREE.Mesh(globeGeometry, globeMaterial)
     scene.add(globe)
-
-    // Atmosphere
-    const atmosphere = new THREE.Mesh(
-      new THREE.SphereGeometry(52, 64, 64),
-      new THREE.ShaderMaterial({
-        vertexShader: `
-          varying vec3 vNormal;
-          void main() {
-            vNormal = normalize(normalMatrix * normal);
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          varying vec3 vNormal;
-          void main() {
-            float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
-            gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity;
-          }
-        `,
-        blending: THREE.AdditiveBlending,
-        side: THREE.BackSide,
-      })
-    )
-    scene.add(atmosphere)
 
     // Add markers
     markers.forEach((marker) => {
@@ -173,7 +149,7 @@ function Globe({ selectedMarker, onMarkerSelect, config = defaultConfig }: Globe
     })
 
     // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1)
     scene.add(ambientLight)
     
     const pointLight = new THREE.PointLight(0xffffff, 1)
